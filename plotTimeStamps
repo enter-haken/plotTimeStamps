@@ -1,0 +1,79 @@
+#!/usr/bin/env python
+import argparse
+import sys
+import stat
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+import datetime
+
+from bson.json_util import loads
+
+def load_from_stdin(field):
+    timeStamps = []
+    mode = os.fstat(0).st_mode
+    if stat.S_ISFIFO(mode):
+        for line in sys.stdin:
+            timeStamp = loads(line)[field]
+            timeStamps.append(timeStamp)
+    return timeStamps
+
+def load_from_file(field, fileName):
+    timeStamps = []
+    with open(fileName) as f:
+        content = f.readlines()
+        for line in content:
+            timeStamp = loads(line)[field]
+            timeStamps.append(timeStamp)
+    return timeStamps
+
+def get_timeStamps(field, fileName):
+    if fileName == "-":
+        return load_from_stdin(field)
+    else:
+        return load_from_file(field, fileName)
+
+
+if __name__ == '__main__':
+    PARSER = argparse.ArgumentParser(
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+            description='''
+                plot time based json data. reads default data from stdin.
+            '''
+            )
+
+    PARSER.add_argument('-o', '--fileName', default='-', help='choose file containing bson data.')
+    PARSER.add_argument('-f', '--field', default='TimeStamp', help='bsonfield with time data')
+    PARSER.add_argument('-b', '--buckets',type=int, default=24, help='bucket count. default 24. Choose the number of measurement points.')
+   
+    args = PARSER.parse_args()
+   
+    timeStamps = get_timeStamps(args.field, args.fileName)
+    if not timeStamps:
+        print("no timestamps found.")
+        sys.exit(0)
+  
+    timedelta = max(timeStamps) - min(timeStamps)
+    print('TimeDelta: {} seconds'.format(timedelta.seconds))
+    
+    bucketSize = int(timedelta.seconds / args.buckets)
+    print('BucketSize: {}'.format(bucketSize))
+
+    x_axis = []
+    y_axis = []
+    
+    for bucket in range(args.buckets):
+        currentDateTime = min(timeStamps) + datetime.timedelta(seconds=bucket * bucketSize)
+        nextDateTime = currentDateTime + datetime.timedelta(seconds=bucketSize)
+        
+        count = len([ x for x in timeStamps if x > currentDateTime and x < nextDateTime ]) 
+       
+        y_axis.append(count)
+        x_axis.append(currentDateTime)
+
+    plt.plot(x_axis,y_axis)
+    plt.ylabel(args.field)
+    plt.grid(True)
+    
+    plt.show()
